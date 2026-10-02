@@ -90,19 +90,6 @@ fn preview_build(cfg: &AppConfig) -> String {
     format!("nh os build -e none {NH_PREVIEW_FLAGS} {}", flake_arg(cfg))
 }
 
-/// `nh os switch|boot|test` elevated through pkexec (pops the polkit GUI dialog).
-fn apply_os(flag: &str, cfg: &AppConfig, verbose: bool) -> String {
-    let extra = if verbose {
-        " --show-activation-logs"
-    } else {
-        ""
-    };
-    format!(
-        "nh os {flag} -e pkexec {NH_APPLY_FLAGS}{extra} {}",
-        flake_arg(cfg)
-    )
-}
-
 /// Build the non-elevated preview command: user-only git/update step followed by
 /// `nh os build`. `inputs` is an optional space-separated flake-input list.
 pub fn build_preview(action: Action, cfg: &AppConfig, inputs: Option<&str>) -> String {
@@ -123,20 +110,44 @@ pub fn build_preview(action: Action, cfg: &AppConfig, inputs: Option<&str>) -> S
     }
 }
 
+/// Inner `nh os switch|boot|test` run as root with no further elevation
+/// (`-e none`); the whole apply command is wrapped in ONE pkexec below so the
+/// user is prompted for their password a single time per apply.
+fn apply_os_inner(flag: &str, cfg: &AppConfig, verbose: bool) -> String {
+    let extra = if verbose {
+        " --show-activation-logs"
+    } else {
+        ""
+    };
+    format!(
+        "nh os {flag} -e none {NH_APPLY_FLAGS}{extra} {}",
+        flake_arg(cfg)
+    )
+}
+
 /// Build the elevated apply command run only after the user confirms. Returns
 /// `None` for pure-update actions that don't switch/boot/test.
+///
+/// The entire apply (which may chain switch + boot) is wrapped in a single
+/// `pkexec sh -c '...'`, so pkexec prompts for the password exactly once
+/// instead of once per elevated sub-step that `nh` runs internally.
 pub fn build_apply(action: Action, cfg: &AppConfig, verbose: bool) -> Option<String> {
-    match action {
-        Action::FullUpdate | Action::Update => Some(format!(
+    let inner = match action {
+        Action::FullUpdate | Action::Update => format!(
             "{} && {}",
-            apply_os("switch", cfg, verbose),
-            apply_os("boot", cfg, verbose)
-        )),
-        Action::Test => Some(apply_os("test", cfg, verbose)),
-        Action::BootNext => Some(apply_os("boot", cfg, verbose)),
-        Action::SpecifyUpdateFull => Some(apply_os("switch", cfg, verbose)),
-        Action::SpecifyUpdate => None,
-    }
+            apply_os_inner("switch", cfg, verbose),
+            apply_os_inner("boot", cfg, verbose)
+        ),
+        Action::Test => apply_os_inner("test", cfg, verbose),
+        Action::BootNext => apply_os_inner("boot", cfg, verbose),
+        Action::SpecifyUpdateFull => apply_os_inner("switch", cfg, verbose),
+        Action::SpecifyUpdate => return None,
+    };
+    Some(format!("pkexec sh -c '{}'", shell_escape_shell(&inner)))
+}
+
+fn shell_escape_shell(s: &str) -> String {
+    s.replace('\'', "'\\''")
 }
 
 /// Direct `nix flake update <inputs>` used by the quick input-section buttons.
@@ -196,34 +207,47 @@ mod tests {
     }
 
     #[test]
-    fn apply_quiet_by_default() {
+    fn apply_is_single_pkexec_wrapper() {
         let cmd = build_apply(Action::FullUpdate, &cfg(), false).unwrap();
-        assert!(cmd.contains("nh os switch -e pkexec --no-nom"));
-        assert!(cmd.contains("nh os boot -e pkexec"));
+        assert!(cmd.starts_with("pkexec sh -c '"));
+        assert!(cmd.contains("nh os switch -e none --no-nom"));
+        assert!(cmd.contains("nh os boot -e none --no-nom"));
+        assert!(cmd.contains("&&"));
+        assert!(!cmd.contains("-e pkexec"));
         assert!(!cmd.contains("--show-activation-logs"));
-        assert!(cmd.ends_with("/home/jar/nix-config"));
     }
 
     #[test]
-    fn apply_verbose_adds_activation_logs() {
+    fn apply_quiet_by_default() {
+        let cmd = build_apply(Action::FullUpdate, &cfg(), false).unwrap();
+        assert!(cmd.starts_with("pkexec sh -c '"));
+        assert!(cmd.contains("nh os switch -e none --no-nom"));
+        assert!(cmd.contains("nh os boot -e none --no-nom"));
+        assert!(!cmd.contains("--show-activation-logs"));
+    }
+
+    #[test]
+    fn apply_verbose_adds_activation_logs_inside_wrapper() {
         let cmd = build_apply(Action::FullUpdate, &cfg(), true).unwrap();
-        assert!(cmd.contains("nh os switch -e pkexec --no-nom --show-activation-logs"));
-        assert!(cmd.contains("nh os boot -e pkexec --no-nom --show-activation-logs"));
+        assert!(cmd.starts_with("pkexec sh -c '"));
+        assert!(cmd.contains("nh os switch -e none --no-nom --show-activation-logs"));
+        assert!(cmd.contains("nh os boot -e none --no-nom --show-activation-logs"));
     }
 
     #[test]
     fn test_apply_quiet_and_verbose() {
         let quiet = build_apply(Action::Test, &cfg(), false).unwrap();
-        assert!(quiet.starts_with("nh os test -e pkexec --no-nom"));
+        assert!(quiet.starts_with("pkexec sh -c '"));
+        assert!(quiet.contains("nh os test -e none --no-nom"));
         assert!(!quiet.contains("--show-activation-logs"));
         let verbose = build_apply(Action::Test, &cfg(), true).unwrap();
-        assert!(verbose.starts_with("nh os test -e pkexec --no-nom --show-activation-logs"));
+        assert!(verbose.contains("nh os test -e none --no-nom --show-activation-logs"));
     }
 
     #[test]
     fn boot_next_applies_boot_only() {
         let cmd = build_apply(Action::BootNext, &cfg(), false).unwrap();
-        assert!(cmd.starts_with("nh os boot -e pkexec"));
+        assert!(cmd.starts_with("pkexec sh -c 'nh os boot -e none"));
         assert!(!cmd.contains("switch"));
         assert!(!cmd.contains("--show-activation-logs"));
     }
