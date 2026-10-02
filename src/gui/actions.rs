@@ -165,10 +165,7 @@ pub fn build_input_update(inputs: &[&str]) -> String {
 /// Update the tuneshon app input, then build (no repo pull, no git add).
 /// For when a user is told simply to "update the app". Non-elevated, no confirm.
 pub fn build_update_app(cfg: &AppConfig) -> String {
-    format!(
-        "nix flake update tuneshon && {}",
-        preview_build(cfg)
-    )
+    format!("nix flake update tuneshon && {}", preview_build(cfg))
 }
 
 /// Full headless command: preview (build) then apply. Used by the CLI, which
@@ -193,9 +190,10 @@ mod tests {
     use super::*;
 
     fn cfg() -> AppConfig {
-        let mut c = AppConfig::default();
-        c.config_dir = std::path::PathBuf::from("/home/jar/nix-config");
-        c
+        AppConfig {
+            config_dir: std::path::PathBuf::from("/home/jar/nix-config"),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -265,10 +263,7 @@ mod tests {
 
     #[test]
     fn input_update_joins_targets() {
-        assert_eq!(
-            build_input_update(&["nixpkgs"]),
-            "nix flake update nixpkgs"
-        );
+        assert_eq!(build_input_update(&["nixpkgs"]), "nix flake update nixpkgs");
         assert_eq!(
             build_input_update(&["icon-jar", "shelljar"]),
             "nix flake update icon-jar shelljar"

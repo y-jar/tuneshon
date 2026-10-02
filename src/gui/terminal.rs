@@ -49,10 +49,7 @@ pub fn classify(line: &str) -> Level {
         || l.contains("done. the new configuration")
     {
         Level::Ok
-    } else if l.starts_with("[cancelled]")
-        || l.starts_with("---")
-        || l.is_empty()
-    {
+    } else if l.starts_with("[cancelled]") || l.starts_with("---") || l.is_empty() {
         Level::Muted
     } else {
         Level::Normal
@@ -84,7 +81,7 @@ impl Default for Terminal {
 
 impl Terminal {
     pub fn push_line(&mut self, line: String) {
-        let stripped = crate::text::strip_ansi(&line.strip_suffix('\n').unwrap_or(&line).to_string());
+        let stripped = crate::text::strip_ansi(line.strip_suffix('\n').unwrap_or(&line));
         let level = classify(&stripped);
         self.lines.push(Line {
             level,
@@ -178,7 +175,10 @@ mod tests {
     fn informational_stderr_is_normal() {
         assert_eq!(classify("> Building NixOS configuration"), Level::Normal);
         assert_eq!(classify("Activating configuration"), Level::Normal);
-        assert_eq!(classify("not applying UID change of user 'gdm-greeter-2'"), Level::Normal);
+        assert_eq!(
+            classify("not applying UID change of user 'gdm-greeter-2'"),
+            Level::Normal
+        );
     }
 
     #[test]

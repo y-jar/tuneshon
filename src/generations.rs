@@ -38,7 +38,8 @@ pub fn parse(output: &str, profile: &Path) -> Vec<Generation> {
     for raw in output.lines() {
         let line = crate::text::strip_ansi(raw);
         let trimmed = line.trim();
-        if trimmed.is_empty() || !trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
+        if trimmed.is_empty()
+            || !trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
             || line.starts_with("Generation No")
         {
             continue;

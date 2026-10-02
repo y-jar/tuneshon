@@ -63,9 +63,7 @@ enum Command {
     },
     /// `nix flake update` then build + switch.
     #[command(name = "flake-update-switch")]
-    FlakeUpdateSwitch {
-        inputs: Vec<String>,
-    },
+    FlakeUpdateSwitch { inputs: Vec<String> },
 }
 
 fn main() {
@@ -89,14 +87,16 @@ fn real_main() -> anyhow::Result<i32> {
 
     let code = match args.command.unwrap() {
         Command::FullUpdate => {
-            let cmd = gui::actions::build_headless_command(gui::actions::Action::FullUpdate, &cfg, None);
+            let cmd =
+                gui::actions::build_headless_command(gui::actions::Action::FullUpdate, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
         Command::Update { dir } => {
             if let Some(d) = dir {
                 cfg.config_dir = std::path::PathBuf::from(d);
             }
-            let cmd = gui::actions::build_headless_command(gui::actions::Action::Update, &cfg, None);
+            let cmd =
+                gui::actions::build_headless_command(gui::actions::Action::Update, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
         Command::Test { dir } => {
@@ -110,7 +110,8 @@ fn real_main() -> anyhow::Result<i32> {
             if let Some(d) = dir {
                 cfg.config_dir = std::path::PathBuf::from(d);
             }
-            let cmd = gui::actions::build_headless_command(gui::actions::Action::BootNext, &cfg, None);
+            let cmd =
+                gui::actions::build_headless_command(gui::actions::Action::BootNext, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
         Command::FlakeUpdate { inputs } => {
@@ -136,9 +137,16 @@ fn real_main() -> anyhow::Result<i32> {
 }
 
 /// If no inputs were given, default to updating every input present in flake.lock.
+/// Names that are not valid Nix input identifiers are dropped so they cannot
+/// escape into the `sh -c` command line (see `flakelock::is_valid_input_name`).
 fn resolve_inputs(provided: &[String], cfg: &config::AppConfig) -> String {
     if !provided.is_empty() {
-        return provided.join(" ");
+        return provided
+            .iter()
+            .filter(|s| flakelock::is_valid_input_name(s))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" ");
     }
     match flakelock::parse_inputs(&cfg.flake_lock_path()) {
         Ok(map) => map.into_keys().collect::<Vec<_>>().join(" "),

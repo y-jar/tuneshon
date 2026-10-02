@@ -15,8 +15,8 @@ use crate::runner::{self, Event, Sink};
 use crossbeam_channel::{Receiver, Sender};
 use dialogs::{ConfirmPrompt, FlakePrompt};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use terminal::Terminal;
+use tokio::sync::Mutex;
 
 use actions::Action;
 
@@ -65,9 +65,10 @@ impl App {
             .create(true)
             .append(true)
             .open(&log);
-        let log_file = Arc::new(Mutex::new(
-            file.unwrap_or_else(|_| std::fs::File::create(&log).expect("open log")),
-        ));
+        let log_file =
+            Arc::new(Mutex::new(file.unwrap_or_else(|_| {
+                std::fs::File::create(&log).expect("open log")
+            })));
 
         let mut app = Self {
             cfg,
@@ -189,8 +190,8 @@ impl App {
     /// stash the elevated command for the confirmation gate on success.
     fn start_preview(&mut self, action: Action, inputs: Option<&str>) {
         let preview = actions::build_preview(action, &self.cfg, inputs);
-        self.pending_apply = actions::build_apply(action, &self.cfg, self.verbose)
-            .map(|apply| (action, apply));
+        self.pending_apply =
+            actions::build_apply(action, &self.cfg, self.verbose).map(|apply| (action, apply));
         self.spawn(&preview);
     }
 
@@ -204,10 +205,8 @@ impl App {
     fn start_apply(&mut self) {
         if let Some((action, apply)) = self.pending_apply.take() {
             self.confirm.open = false;
-            self.terminal.push_line(format!(
-                "[ok] applying \"{}\"...",
-                action.label()
-            ));
+            self.terminal
+                .push_line(format!("[ok] applying \"{}\"...", action.label()));
             self.spawn(&apply);
         }
     }
@@ -241,10 +240,8 @@ impl App {
                 }
 
                 ui.centered_and_justified(|ui| {
-                    let (rect, res) = ui.allocate_exact_size(
-                        egui::vec2(36.0, 36.0),
-                        egui::Sense::click(),
-                    );
+                    let (rect, res) =
+                        ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::click());
                     let res = res.on_hover_text("click me!!");
                     if res.clicked() {
                         self.spinning = !self.spinning;
@@ -316,7 +313,13 @@ impl App {
                     ),
                     (
                         "addons",
-                        &["wall-jar", "icon-jar", "mcskins-jar", "shelljar", "tuneshon"],
+                        &[
+                            "wall-jar",
+                            "icon-jar",
+                            "mcskins-jar",
+                            "shelljar",
+                            "tuneshon",
+                        ],
                         "quick `nix flake update` for your addons \
                          (icon-jar, wall-jar, mcskins-jar, shelljar, tuneshon).",
                     ),
@@ -395,12 +398,10 @@ impl App {
                                 .monospace()
                                 .size(13.0);
                                 let rich = if g.current {
-                                    rich
-                                        .strong()
+                                    rich.strong()
                                         .color(egui::Color32::from_rgb(0x50, 0xC0, 0x70))
                                 } else {
-                                    rich
-                                        .color(ui.visuals().weak_text_color())
+                                    rich.color(ui.visuals().weak_text_color())
                                 };
                                 ui.add(egui::Label::new(rich).wrap_mode(egui::TextWrapMode::Wrap));
                                 ui.add_space(4.0);
@@ -452,7 +453,8 @@ impl App {
             } else if self.confirm.cancelled {
                 self.confirm.cancelled = false;
                 self.confirm.open = false;
-                self.terminal.push_line("[cancelled] nothing applied".to_string());
+                self.terminal
+                    .push_line("[cancelled] nothing applied".to_string());
                 self.pending_apply = None;
                 self.spinning = false;
             }
@@ -485,9 +487,13 @@ fn install_system_fonts(ctx: &egui::Context) {
     let mut add_face = |name: &str, data: Vec<u8>, families: &[egui::FontFamily]| {
         fonts
             .font_data
-            .insert(name.to_string(), egui::FontData::from_owned(data).into());
+            .insert(name.to_string(), egui::FontData::from_owned(data));
         for fam in families {
-            fonts.families.entry(fam.clone()).or_default().push(name.to_string());
+            fonts
+                .families
+                .entry(fam.clone())
+                .or_default()
+                .push(name.to_string());
         }
     };
 
@@ -516,10 +522,7 @@ fn install_system_fonts(ctx: &egui::Context) {
                 add_face(
                     "system_unicode",
                     data,
-                    &[
-                        egui::FontFamily::Monospace,
-                        egui::FontFamily::Proportional,
-                    ],
+                    &[egui::FontFamily::Monospace, egui::FontFamily::Proportional],
                 );
             }
         }

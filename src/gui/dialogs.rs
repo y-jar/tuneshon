@@ -77,7 +77,11 @@ pub fn settings_modal(
                 if ui.text_edit_singleline(&mut config_dir_buf).changed() {
                     edit.config_dir = PathBuf::from(config_dir_buf.trim());
                 }
-                if ui.button("Browse...").on_hover_text("Pick the Nix config directory (repo root).").clicked() {
+                if ui
+                    .button("Browse...")
+                    .on_hover_text("Pick the Nix config directory (repo root).")
+                    .clicked()
+                {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         config_dir_buf = p.to_string_lossy().into_owned();
                         edit.config_dir = p;
@@ -89,7 +93,11 @@ pub fn settings_modal(
                 if ui.text_edit_singleline(&mut log_file_buf).changed() {
                     edit.log_file = PathBuf::from(log_file_buf.trim());
                 }
-                if ui.button("Browse...").on_hover_text("Pick where to write the log file.").clicked() {
+                if ui
+                    .button("Browse...")
+                    .on_hover_text("Pick where to write the log file.")
+                    .clicked()
+                {
                     if let Some(p) = rfd::FileDialog::new()
                         .set_file_name("tuneshon.log")
                         .save_file()
@@ -115,10 +123,18 @@ pub fn settings_modal(
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button("Save").on_hover_text("Save settings and close.").clicked() {
+                if ui
+                    .button("Save")
+                    .on_hover_text("Save settings and close.")
+                    .clicked()
+                {
                     saved = true;
                 }
-                if ui.button("Reset defaults").on_hover_text("Restore default settings and close.").clicked() {
+                if ui
+                    .button("Reset defaults")
+                    .on_hover_text("Restore default settings and close.")
+                    .clicked()
+                {
                     reset = true;
                 }
             });
@@ -151,8 +167,7 @@ fn dismiss_requested(ctx: &egui::Context, win_rect: &egui::Rect) -> bool {
     ctx.input(|i| {
         escape = i.key_pressed(egui::Key::Escape);
         outside = i.pointer.any_click()
-            && i
-                .pointer
+            && i.pointer
                 .interact_pos()
                 .is_some_and(|p| !win_rect.contains(p));
     });
@@ -160,11 +175,7 @@ fn dismiss_requested(ctx: &egui::Context, win_rect: &egui::Rect) -> bool {
 }
 
 /// Modal for picking which flake inputs to update.
-pub fn flake_prompt(
-    ctx: &egui::Context,
-    prompt: &mut FlakePrompt,
-    ignore_dismiss: bool,
-) {
+pub fn flake_prompt(ctx: &egui::Context, prompt: &mut FlakePrompt, ignore_dismiss: bool) {
     let mut open = prompt.open;
     let mut filter = prompt.filter.clone();
     let mut inputs: Vec<FlakeInput> = prompt.inputs.clone();
@@ -204,14 +215,13 @@ pub fn flake_prompt(
 
             ui.separator();
             let has_sel = inputs.iter().any(|i| i.selected);
-            let upd = ui.add_enabled(
-                has_sel,
-                egui::Button::new("Update"),
-            ).on_hover_text(if has_sel {
-                "Run `nix flake update` on the selected inputs."
-            } else {
-                "Select at least one input to update."
-            });
+            let upd = ui
+                .add_enabled(has_sel, egui::Button::new("Update"))
+                .on_hover_text(if has_sel {
+                    "Run `nix flake update` on the selected inputs."
+                } else {
+                    "Select at least one input to update."
+                });
             if upd.clicked() {
                 submit = true;
             }
@@ -232,23 +242,13 @@ pub fn flake_prompt(
 }
 
 /// Confirmation gate between the non-elevated preview and the elevated apply.
+#[derive(Default)]
 pub struct ConfirmPrompt {
     pub open: bool,
     pub summary: String,
     pub apply_requested: bool,
     /// True when the user dismissed/cancelled without applying.
     pub cancelled: bool,
-}
-
-impl Default for ConfirmPrompt {
-    fn default() -> Self {
-        Self {
-            open: false,
-            summary: String::new(),
-            apply_requested: false,
-            cancelled: false,
-        }
-    }
 }
 
 /// Modal asking whether to apply the just-built configuration.
@@ -297,43 +297,46 @@ pub fn confirm_modal(ctx: &egui::Context, prompt: &mut ConfirmPrompt) {
 
 pub fn help_modal(ctx: &egui::Context, open: &mut bool, ignore_dismiss: bool) {
     let mut close = false;
-    let resp = egui::Window::new("Help").open(open).collapsible(false).show(ctx, |ui| {
-        ui.spacing_mut().item_spacing = egui::Vec2::new(8.0, 6.0);
-        let body = [
-            "tuneshon - lightweight NixOS update tool",
-            "",
-            "Actions (left grid):",
-            "  full update",
-            "      git pull, then build + switch + boot.",
-            "  update",
-            "      git add ., then build + switch + boot.",
-            "  test",
-            "      git add ., build, then test-activate (not the boot default).",
-            "  update after restart",
-            "      git add ., build, then boot (applies on next reboot).",
-            "  specify update? / specify update & update",
-            "      pick flake inputs to update (optionally followed by switch).",
-            "",
-            "Update inputs (left grid): quick non-elevated `nix flake update`",
-            "for packages / addons / kernel without a full build.",
-            "",
-            "Each action first runs a non-elevated `nh os build` so you can",
-            "watch the terminal and confirm the config builds. Only after it",
-            "succeeds are you prompted (Apply/Cancel) to run the elevated",
-            "switch/boot/test through pkexec.",
-            "",
-            "The right panel lists system generations, newest first, with the",
-            "current one highlighted in green. The center pane streams colored",
-            "command output (stdout/stderr).",
-        ];
-        for line in body {
-            ui.label(egui::RichText::new(line).monospace().size(12.0));
-        }
-        ui.add_space(8.0);
-        if ui.button("Close").clicked() {
-            close = true;
-        }
-    });
+    let resp = egui::Window::new("Help")
+        .open(open)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            ui.spacing_mut().item_spacing = egui::Vec2::new(8.0, 6.0);
+            let body = [
+                "tuneshon - lightweight NixOS update tool",
+                "",
+                "Actions (left grid):",
+                "  full update",
+                "      git pull, then build + switch + boot.",
+                "  update",
+                "      git add ., then build + switch + boot.",
+                "  test",
+                "      git add ., build, then test-activate (not the boot default).",
+                "  update after restart",
+                "      git add ., build, then boot (applies on next reboot).",
+                "  specify update? / specify update & update",
+                "      pick flake inputs to update (optionally followed by switch).",
+                "",
+                "Update inputs (left grid): quick non-elevated `nix flake update`",
+                "for packages / addons / kernel without a full build.",
+                "",
+                "Each action first runs a non-elevated `nh os build` so you can",
+                "watch the terminal and confirm the config builds. Only after it",
+                "succeeds are you prompted (Apply/Cancel) to run the elevated",
+                "switch/boot/test through pkexec.",
+                "",
+                "The right panel lists system generations, newest first, with the",
+                "current one highlighted in green. The center pane streams colored",
+                "command output (stdout/stderr).",
+            ];
+            for line in body {
+                ui.label(egui::RichText::new(line).monospace().size(12.0));
+            }
+            ui.add_space(8.0);
+            if ui.button("Close").clicked() {
+                close = true;
+            }
+        });
     if close {
         *open = false;
     }
