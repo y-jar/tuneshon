@@ -125,7 +125,7 @@ impl App {
 
         let ok = code.unwrap_or(1) == 0;
         if ok {
-            if let Some((action, apply_cmd)) = self.pending_apply.take() {
+            if let Some((action, apply_cmd)) = self.pending_apply.as_ref() {
                 self.confirm.summary = format!(
                     "Build OK for \"{}\" — apply it now?\n  {}",
                     action.label(),
