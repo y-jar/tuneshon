@@ -111,11 +111,27 @@ impl Terminal {
     }
 
     /// Render the buffer in a bottom-sticking, monospace scroll area with
-    /// per-line colors.
-    pub fn show(&mut self, ui: &mut egui::Ui) {
+    /// per-line colors. `verbose` toggles extra activation logs on apply.
+    pub fn show(&mut self, ui: &mut egui::Ui, verbose: &mut bool) {
         ui.horizontal(|ui| {
             ui.add_space(4.0);
             ui.checkbox(&mut self.stick_to_bottom, "follow logs");
+            ui.separator();
+            let label = if *verbose {
+                "verbose logs: on"
+            } else {
+                "verbose logs: off"
+            };
+            if ui
+                .button(label)
+                .on_hover_text(
+                    "Show extra activation logs on switch/boot/test. \
+                     Off by default for a quieter, simpler view.",
+                )
+                .clicked()
+            {
+                *verbose = !*verbose;
+            }
         });
         ui.separator();
         egui::Frame::none()

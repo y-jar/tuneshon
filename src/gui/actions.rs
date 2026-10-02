@@ -75,8 +75,9 @@ impl Action {
 /// `--show-activation-logs`, so preview streams full build logs (`-L`) instead.
 const NH_PREVIEW_FLAGS: &str = "--no-nom --print-build-logs";
 
-/// Elevated `nh os switch|boot|test` accepts `--show-activation-logs`.
-const NH_APPLY_FLAGS: &str = "--no-nom --show-activation-logs";
+/// Elevated `nh os switch|boot|test`. Quiet by default; `--show-activation-logs`
+/// is added only in verbose mode (extra activation detail for advanced users).
+const NH_APPLY_FLAGS: &str = "--no-nom";
 
 /// The config dir as a positional flake installable (nh has no `--flake` flag).
 fn flake_arg(cfg: &AppConfig) -> String {
@@ -90,8 +91,16 @@ fn preview_build(cfg: &AppConfig) -> String {
 }
 
 /// `nh os switch|boot|test` elevated through pkexec (pops the polkit GUI dialog).
-fn apply_os(flag: &str, cfg: &AppConfig) -> String {
-    format!("nh os {flag} -e pkexec {NH_APPLY_FLAGS} {}", flake_arg(cfg))
+fn apply_os(flag: &str, cfg: &AppConfig, verbose: bool) -> String {
+    let extra = if verbose {
+        " --show-activation-logs"
+    } else {
+        ""
+    };
+    format!(
+        "nh os {flag} -e pkexec {NH_APPLY_FLAGS}{extra} {}",
+        flake_arg(cfg)
+    )
 }
 
 /// Build the non-elevated preview command: user-only git/update step followed by
@@ -116,16 +125,16 @@ pub fn build_preview(action: Action, cfg: &AppConfig, inputs: Option<&str>) -> S
 
 /// Build the elevated apply command run only after the user confirms. Returns
 /// `None` for pure-update actions that don't switch/boot/test.
-pub fn build_apply(action: Action, cfg: &AppConfig) -> Option<String> {
+pub fn build_apply(action: Action, cfg: &AppConfig, verbose: bool) -> Option<String> {
     match action {
         Action::FullUpdate | Action::Update => Some(format!(
             "{} && {}",
-            apply_os("switch", cfg),
-            apply_os("boot", cfg)
+            apply_os("switch", cfg, verbose),
+            apply_os("boot", cfg, verbose)
         )),
-        Action::Test => Some(apply_os("test", cfg)),
-        Action::BootNext => Some(apply_os("boot", cfg)),
-        Action::SpecifyUpdateFull => Some(apply_os("switch", cfg)),
+        Action::Test => Some(apply_os("test", cfg, verbose)),
+        Action::BootNext => Some(apply_os("boot", cfg, verbose)),
+        Action::SpecifyUpdateFull => Some(apply_os("switch", cfg, verbose)),
         Action::SpecifyUpdate => None,
     }
 }
@@ -136,11 +145,20 @@ pub fn build_input_update(inputs: &[&str]) -> String {
     format!("nix flake update {}", inputs.join(" "))
 }
 
+/// Update the tuneshon app input, then build (no repo pull, no git add).
+/// For when a user is told simply to "update the app". Non-elevated, no confirm.
+pub fn build_update_app(cfg: &AppConfig) -> String {
+    format!(
+        "nix flake update tuneshon && {}",
+        preview_build(cfg)
+    )
+}
+
 /// Full headless command: preview (build) then apply. Used by the CLI, which
 /// cannot show the interactive confirmation gate.
 pub fn build_command(action: Action, cfg: &AppConfig, inputs: Option<&str>) -> String {
     let preview = build_preview(action, cfg, inputs);
-    match build_apply(action, cfg) {
+    match build_apply(action, cfg, false) {
         Some(apply) => format!("{preview} && {apply}"),
         None => preview,
     }
@@ -178,29 +196,41 @@ mod tests {
     }
 
     #[test]
-    fn apply_uses_pkexec_switch_boot() {
-        let cmd = build_apply(Action::FullUpdate, &cfg()).unwrap();
-        assert!(cmd.contains("nh os switch -e pkexec --no-nom --show-activation-logs"));
+    fn apply_quiet_by_default() {
+        let cmd = build_apply(Action::FullUpdate, &cfg(), false).unwrap();
+        assert!(cmd.contains("nh os switch -e pkexec --no-nom"));
         assert!(cmd.contains("nh os boot -e pkexec"));
+        assert!(!cmd.contains("--show-activation-logs"));
         assert!(cmd.ends_with("/home/jar/nix-config"));
     }
 
     #[test]
-    fn test_apply_uses_nh_test() {
-        let cmd = build_apply(Action::Test, &cfg()).unwrap();
-        assert!(cmd.starts_with("nh os test -e pkexec --no-nom --show-activation-logs"));
+    fn apply_verbose_adds_activation_logs() {
+        let cmd = build_apply(Action::FullUpdate, &cfg(), true).unwrap();
+        assert!(cmd.contains("nh os switch -e pkexec --no-nom --show-activation-logs"));
+        assert!(cmd.contains("nh os boot -e pkexec --no-nom --show-activation-logs"));
+    }
+
+    #[test]
+    fn test_apply_quiet_and_verbose() {
+        let quiet = build_apply(Action::Test, &cfg(), false).unwrap();
+        assert!(quiet.starts_with("nh os test -e pkexec --no-nom"));
+        assert!(!quiet.contains("--show-activation-logs"));
+        let verbose = build_apply(Action::Test, &cfg(), true).unwrap();
+        assert!(verbose.starts_with("nh os test -e pkexec --no-nom --show-activation-logs"));
     }
 
     #[test]
     fn boot_next_applies_boot_only() {
-        let cmd = build_apply(Action::BootNext, &cfg()).unwrap();
+        let cmd = build_apply(Action::BootNext, &cfg(), false).unwrap();
         assert!(cmd.starts_with("nh os boot -e pkexec"));
         assert!(!cmd.contains("switch"));
+        assert!(!cmd.contains("--show-activation-logs"));
     }
 
     #[test]
     fn specify_update_has_no_apply() {
-        assert_eq!(build_apply(Action::SpecifyUpdate, &cfg()), None);
+        assert_eq!(build_apply(Action::SpecifyUpdate, &cfg(), false), None);
     }
 
     #[test]
@@ -213,5 +243,15 @@ mod tests {
             build_input_update(&["icon-jar", "shelljar"]),
             "nix flake update icon-jar shelljar"
         );
+    }
+
+    #[test]
+    fn update_app_builds_without_pull_or_add() {
+        let cmd = build_update_app(&cfg());
+        assert!(cmd.starts_with("nix flake update tuneshon && nh os build -e none"));
+        assert!(!cmd.contains("git add"));
+        assert!(!cmd.contains("git pull"));
+        assert!(cmd.ends_with("/home/jar/nix-config"));
+        assert!(!cmd.contains("--show-activation-logs"));
     }
 }

@@ -35,6 +35,8 @@ pub struct App {
     pub pending_apply: Option<(Action, String)>,
     /// True while a command (preview or apply) is running; blocks re-clicking.
     pub running: bool,
+    /// Show extra activation logs (`--show-activation-logs`) on apply commands.
+    pub verbose: bool,
     /// Recent `nh os info` generations for the right panel.
     pub generations: Vec<Generation>,
     /// True once the initial generation fetch has completed.
@@ -76,6 +78,7 @@ impl App {
             pending: None,
             pending_apply: None,
             running: false,
+            verbose: false,
             generations: Vec::new(),
             gens_loaded: false,
             gens_loading: false,
@@ -178,9 +181,15 @@ impl App {
     /// stash the elevated command for the confirmation gate on success.
     fn start_preview(&mut self, action: Action, inputs: Option<&str>) {
         let preview = actions::build_preview(action, &self.cfg, inputs);
-        self.pending_apply = actions::build_apply(action, &self.cfg)
+        self.pending_apply = actions::build_apply(action, &self.cfg, self.verbose)
             .map(|apply| (action, apply));
         self.spawn(&preview);
+    }
+
+    /// Quick update of the tuneshon app input + build (no repo pull / git add).
+    fn run_update_app(&mut self) {
+        let cmd = actions::build_update_app(&self.cfg);
+        self.spawn(&cmd);
     }
 
     /// Run the elevated apply command after the user confirmed.
@@ -323,6 +332,21 @@ impl App {
                     }
                 }
 
+                if ui
+                    .add_enabled(
+                        can_click,
+                        egui::Button::new("update app")
+                            .min_size(egui::vec2(ui.available_width(), 34.0)),
+                    )
+                    .on_hover_text(
+                        "Update the tuneshon app input and build (no repo pull). \
+                         For when you're told to update the app.",
+                    )
+                    .clicked()
+                {
+                    self.run_update_app();
+                }
+
                 ui.add_space(12.0);
                 if ui
                     .button("clear terminal")
@@ -384,7 +408,7 @@ impl App {
             ui.heading("Output");
             ui.separator();
             self.drain_events();
-            self.terminal.show(ui);
+            self.terminal.show(ui, &mut self.verbose);
         });
     }
 
@@ -434,6 +458,12 @@ impl eframe::App for App {
         self.left_panel(ctx);
         self.central(ctx);
         self.dialogs(ctx);
+
+        // Stream the terminal while a command runs or generations are loading,
+        // even with no mouse input (egui repaints otherwise only on input).
+        if self.running || self.gens_loading {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
     }
 }
 
