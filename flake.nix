@@ -65,6 +65,17 @@
           '';
         };
 
+        # Desktop launcher entry + icon so tuneshon shows in app grids/launchers.
+        desktopItem = pkgs.makeDesktopItem {
+          name = "tuneshon";
+          exec = "tuneshon";
+          icon = "tuneshon";
+          desktopName = "update";
+          comment = "NixOS update tool (GUI + CLI)";
+          categories = [ "System" ];
+          type = "Application";
+        };
+
         mkPackage = pkgs.rustPlatform.buildRustPackage {
           pname = "tuneshon";
           version = "0.1.0";
@@ -73,7 +84,7 @@
             filter = path: type:
               let
                 rel = pkgs.lib.removePrefix (toString ./.) (toString path);
-                keep = [ "/Cargo.toml" "/Cargo.lock" "/flake.nix" "/flake.lock" "/src" ];
+                keep = [ "/Cargo.toml" "/Cargo.lock" "/flake.nix" "/flake.lock" "/src" "/tuneshon_logo.png" ];
               in
               type == "directory" || builtins.any (s: pkgs.lib.hasPrefix s rel) keep;
           };
@@ -84,6 +95,12 @@
           postInstall = ''
             wrapProgram $out/bin/tuneshon \
               --prefix LD_LIBRARY_PATH : "${LD_LIBRARY_PATH}"
+
+            # desktop entry + icon (launcher registration)
+            install -Dm644 ${desktopItem}/share/applications/tuneshon.desktop \
+              $out/share/applications/tuneshon.desktop
+            install -Dm644 ${./tuneshon_logo.png} \
+              $out/share/icons/hicolor/scalable/apps/tuneshon.png
           '';
         };
       in
