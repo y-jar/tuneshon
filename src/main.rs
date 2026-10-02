@@ -1,5 +1,6 @@
 mod config;
 mod flakelock;
+mod generations;
 mod gui;
 mod runner;
 
@@ -23,36 +24,37 @@ pub struct Args {
 
 #[derive(Subcommand)]
 enum Command {
-    /// git pull, then nixos-rebuild switch and boot.
-    PullSwitchBoot,
-    /// git add {repodir}, then switch and boot.
-    #[command(name = "add-switch-boot")]
-    AddSwitchBoot {
+    /// git pull, then build + switch + boot (non-tinkering users).
+    #[command(name = "full-update")]
+    FullUpdate,
+    /// git add {repodir}, then build + switch + boot.
+    #[command(name = "update")]
+    Update {
         /// Override the Nix config dir (default: from config).
         #[arg(long)]
         dir: Option<String>,
     },
-    /// git add {repodir}, then switch.
-    #[command(name = "add-switch")]
-    AddSwitch {
+    /// git add {repodir}, build, then test-activate.
+    #[command(name = "test")]
+    Test {
         #[arg(long)]
         dir: Option<String>,
     },
-    /// git add {repodir}, then boot.
-    #[command(name = "add-boot")]
-    AddBoot {
+    /// git add {repodir}, build, then boot (activate next restart).
+    #[command(name = "boot")]
+    BootNext {
         #[arg(long)]
         dir: Option<String>,
     },
-    /// Run `nix flake update` on optional inputs (from flake.lock).
+    /// `nix flake update` on optional inputs (from flake.lock).
     #[command(name = "flake-update")]
     FlakeUpdate {
         /// Flake inputs to update; if omitted, a filterable picker is shown
         /// when using the GUI, or all inputs in headless mode.
         inputs: Vec<String>,
     },
-    /// `nix flake update` then nixos-rebuild switch.
-    #[command(name = "flake-update-switch-boot")]
+    /// `nix flake update` then build + switch.
+    #[command(name = "flake-update-update")]
     FlakeUpdateSwitchBoot {
         inputs: Vec<String>,
     },
@@ -78,44 +80,35 @@ fn real_main() -> anyhow::Result<i32> {
     }
 
     let code = match args.command.unwrap() {
-        Command::PullSwitchBoot => {
-            let cmd = gui::actions::build_command(
-                gui::actions::Action::PullSwitchBoot,
-                &cfg,
-                None,
-            );
+        Command::FullUpdate => {
+            let cmd = gui::actions::build_command(gui::actions::Action::FullUpdate, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
-        Command::AddSwitchBoot { dir } => {
+        Command::Update { dir } => {
             if let Some(d) = dir {
                 cfg.config_dir = std::path::PathBuf::from(d);
             }
-            let cmd = gui::actions::build_command(
-                gui::actions::Action::AddSwitchBoot,
-                &cfg,
-                None,
-            );
+            let cmd = gui::actions::build_command(gui::actions::Action::Update, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
-        Command::AddSwitch { dir } => {
+        Command::Test { dir } => {
             if let Some(d) = dir {
                 cfg.config_dir = std::path::PathBuf::from(d);
             }
-            let cmd =
-                gui::actions::build_command(gui::actions::Action::AddSwitch, &cfg, None);
+            let cmd = gui::actions::build_command(gui::actions::Action::Test, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
-        Command::AddBoot { dir } => {
+        Command::BootNext { dir } => {
             if let Some(d) = dir {
                 cfg.config_dir = std::path::PathBuf::from(d);
             }
-            let cmd = gui::actions::build_command(gui::actions::Action::AddBoot, &cfg, None);
+            let cmd = gui::actions::build_command(gui::actions::Action::BootNext, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
         Command::FlakeUpdate { inputs } => {
             let inputs = resolve_inputs(&inputs, &cfg);
             let cmd = gui::actions::build_command(
-                gui::actions::Action::FlakeLockUpdate,
+                gui::actions::Action::SpecifyUpdate,
                 &cfg,
                 Some(&inputs),
             );
@@ -124,7 +117,7 @@ fn real_main() -> anyhow::Result<i32> {
         Command::FlakeUpdateSwitchBoot { inputs } => {
             let inputs = resolve_inputs(&inputs, &cfg);
             let cmd = gui::actions::build_command(
-                gui::actions::Action::FlakeLockUpdateSwitchBoot,
+                gui::actions::Action::SpecifyUpdateFull,
                 &cfg,
                 Some(&inputs),
             );

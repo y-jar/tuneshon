@@ -16,6 +16,8 @@ pub enum Event {
     Err(String),
     /// The command finished with the given exit status.
     Done(Option<i32>),
+    /// Generations loaded asynchronously for the right panel.
+    Generations(Vec<crate::generations::Generation>),
 }
 
 #[derive(Clone)]
@@ -36,6 +38,7 @@ impl Sink {
             Event::Out(l) => Some(l),
             Event::Err(l) => Some(l),
             Event::Done(_) => None,
+            Event::Generations(_) => None,
         };
         if let Some(l) = line {
             let mut f = self.log_file.lock().await;
@@ -125,6 +128,7 @@ pub fn run_cli(cmdline: &str, cwd: &Path, log_file: &Path) -> anyhow::Result<i32
                         // Signal end of stream.
                         break;
                     }
+                    Event::Generations(_) => { /* ignored by CLI */ }
                 }
             }
             count

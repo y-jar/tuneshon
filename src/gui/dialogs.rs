@@ -43,10 +43,14 @@ impl FlakePrompt {
 }
 
 /// Modal for editing persistent settings.
+///
+/// `ignore_dismiss` suppresses the outside-click/Escape close on the very frame
+/// the modal was opened, so the click that opened it can't immediately close it.
 pub fn settings_modal(
     ctx: &egui::Context,
     open: &mut bool,
     cfg: &mut AppConfig,
+    ignore_dismiss: bool,
 ) {
     let mut edit = cfg.clone();
     let mut config_dir_buf = edit.config_dir.to_string_lossy().to_string();
@@ -71,7 +75,7 @@ pub fn settings_modal(
                 if ui.text_edit_singleline(&mut config_dir_buf).changed() {
                     edit.config_dir = PathBuf::from(config_dir_buf.trim());
                 }
-                if ui.button("Browse…").clicked() {
+                if ui.button("Browse…").on_hover_text("Pick the Nix config directory (repo root).").clicked() {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         config_dir_buf = p.to_string_lossy().into_owned();
                         edit.config_dir = p;
@@ -83,7 +87,7 @@ pub fn settings_modal(
                 if ui.text_edit_singleline(&mut log_file_buf).changed() {
                     edit.log_file = PathBuf::from(log_file_buf.trim());
                 }
-                if ui.button("Browse…").clicked() {
+                if ui.button("Browse…").on_hover_text("Pick where to write the log file.").clicked() {
                     if let Some(p) = rfd::FileDialog::new()
                         .set_file_name("tuneshon.log")
                         .save_file()
@@ -109,10 +113,10 @@ pub fn settings_modal(
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button("Save").clicked() {
+                if ui.button("Save").on_hover_text("Save settings and close.").clicked() {
                     saved = true;
                 }
-                if ui.button("Reset defaults").clicked() {
+                if ui.button("Reset defaults").on_hover_text("Restore default settings and close.").clicked() {
                     reset = true;
                 }
             });
@@ -131,7 +135,7 @@ pub fn settings_modal(
         *open = false;
     }
     if let Some(inner) = resp {
-        if dismiss_requested(ctx, &inner.response.rect) {
+        if !ignore_dismiss && dismiss_requested(ctx, &inner.response.rect) {
             *open = false;
         }
     }
@@ -154,7 +158,11 @@ fn dismiss_requested(ctx: &egui::Context, win_rect: &egui::Rect) -> bool {
 }
 
 /// Modal for picking which flake inputs to update.
-pub fn flake_prompt(ctx: &egui::Context, prompt: &mut FlakePrompt) {
+pub fn flake_prompt(
+    ctx: &egui::Context,
+    prompt: &mut FlakePrompt,
+    ignore_dismiss: bool,
+) {
     let mut open = prompt.open;
     let mut filter = prompt.filter.clone();
     let mut inputs: Vec<FlakeInput> = prompt.inputs.clone();
@@ -167,7 +175,8 @@ pub fn flake_prompt(ctx: &egui::Context, prompt: &mut FlakePrompt) {
             ui.set_min_width(340.0);
             ui.horizontal(|ui| {
                 ui.label("Filter:");
-                ui.text_edit_singleline(&mut filter);
+                ui.text_edit_singleline(&mut filter)
+                    .on_hover_text("Type to narrow the flake input list by name.");
             });
             ui.separator();
 
@@ -193,13 +202,21 @@ pub fn flake_prompt(ctx: &egui::Context, prompt: &mut FlakePrompt) {
 
             ui.separator();
             let has_sel = inputs.iter().any(|i| i.selected);
-            if ui.add_enabled(has_sel, egui::Button::new("Update")).clicked() {
+            let upd = ui.add_enabled(
+                has_sel,
+                egui::Button::new("Update"),
+            ).on_hover_text(if has_sel {
+                "Run `nix flake update` on the selected inputs."
+            } else {
+                "Select at least one input to update."
+            });
+            if upd.clicked() {
                 submit = true;
             }
         });
 
     if let Some(inner) = resp {
-        if dismiss_requested(ctx, &inner.response.rect) {
+        if !ignore_dismiss && dismiss_requested(ctx, &inner.response.rect) {
             open = false;
         }
     }
@@ -246,10 +263,20 @@ pub fn confirm_modal(ctx: &egui::Context, prompt: &mut ConfirmPrompt) {
             ui.label(egui::RichText::new(&summary).monospace().size(13.0));
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                if ui.button("Apply").clicked() {
+                if ui
+                    .button("Apply")
+                    .on_hover_text(
+                        "Run the elevated switch/boot/test now (prompts for your password via polkit).",
+                    )
+                    .clicked()
+                {
                     prompt.apply_requested = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui
+                    .button("Cancel")
+                    .on_hover_text("Abort — do not apply; returns to idle.")
+                    .clicked()
+                {
                     prompt.cancelled = true;
                 }
             });
@@ -266,35 +293,36 @@ pub fn confirm_modal(ctx: &egui::Context, prompt: &mut ConfirmPrompt) {
     }
 }
 
-pub fn help_modal(ctx: &egui::Context, open: &mut bool) {
+pub fn help_modal(ctx: &egui::Context, open: &mut bool, ignore_dismiss: bool) {
     let mut close = false;
     let resp = egui::Window::new("Help").open(open).collapsible(false).show(ctx, |ui| {
         ui.spacing_mut().item_spacing = egui::Vec2::new(8.0, 6.0);
         let body = [
             "tuneshon - lightweight NixOS update tool",
             "",
-            "GUI actions (left grid):",
-            "  pull + switch + boot",
-            "      git pull, then build + switch + boot (via nh).",
-            "  git add {repodir} + switch + boot",
-            "      stage repo changes, then switch + boot.",
-            "  git add {repodir} + switch",
-            "      stage repo changes, then switch.",
-            "  git add {repodir} + boot",
-            "      stage repo changes, then boot.",
-            "  flake lock update [ + switch + boot ]",
-            "      pick flake inputs to update in the dialog.",
+            "Actions (left grid):",
+            "  full update",
+            "      git pull, then build + switch + boot.",
+            "  update",
+            "      git add ., then build + switch + boot.",
+            "  test",
+            "      git add ., build, then test-activate (not the boot default).",
+            "  update after restart",
+            "      git add ., build, then boot (applies on next reboot).",
+            "  specify update? / specify update & update",
+            "      pick flake inputs to update (optionally followed by switch).",
+            "",
+            "Update inputs (left grid): quick non-elevated `nix flake update`",
+            "for packages / addons / kernel without a full build.",
             "",
             "Each action first runs a non-elevated `nh os build` so you can",
             "watch the terminal and confirm the config builds. Only after it",
             "succeeds are you prompted (Apply/Cancel) to run the elevated",
-            "switch/boot through pkexec.",
+            "switch/boot/test through pkexec.",
             "",
-            "The right pane streams command output (stdout/stderr).",
-            "Output is also appended to the configured log file.",
-            "",
-            "Settings (gear icon) lets you set the Nix config dir",
-            "and log path. Clicking the logo spins it.",
+            "The right panel lists system generations, newest first, with the",
+            "current one highlighted in green. The center pane streams colored",
+            "command output (stdout/stderr).",
         ];
         for line in body {
             ui.label(egui::RichText::new(line).monospace().size(12.0));
@@ -308,7 +336,7 @@ pub fn help_modal(ctx: &egui::Context, open: &mut bool) {
         *open = false;
     }
     if let Some(inner) = resp {
-        if dismiss_requested(ctx, &inner.response.rect) {
+        if !ignore_dismiss && dismiss_requested(ctx, &inner.response.rect) {
             *open = false;
         }
     }
