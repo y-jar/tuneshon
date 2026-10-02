@@ -12,71 +12,57 @@
 
   outputs = { self, nixpkgs, flake-utils, rust-overlay }:
     let
-      perSystem = flake-utils.lib.eachDefaultSystem (system:
+      # Build the tunehon package, baking a default Nix config dir into the
+      # binary wrapper. Consumers pick the dir via `lib.mkPackage { inherit
+      # pkgs configDir; }` so a desktop-launched "update" always points at the
+      # right repo even though launchers don't source ~/.profile.
+      mkPackage = { pkgs, configDir }: (
         let
-        overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs { inherit system overlays; };
+          guiLibs = with pkgs; [
+            libGL
+            libxkbcommon
+            wayland
+            xorg.libxcb
+            xorg.libX11
+            xorg.libXcursor
+            xorg.libXi
+            xorg.libXrandr
+            fontconfig
+            freetype
+            expat
+            zlib
+            openssl
+            gtk3
+            glib
+            glib-networking
+            gdk-pixbuf
+            cairo
+            pango
+            atk
+            harfbuzz
+          ];
 
-        # Runtime/build libraries required by eframe (egui) on Linux/NixOS.
-        guiLibs = with pkgs; [
-          libGL
-          libxkbcommon
-          wayland
-          xorg.libxcb
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libXrandr
-          fontconfig
-          freetype
-          expat
-          zlib
-          openssl
-          gtk3
-          glib
-          glib-networking
-          gdk-pixbuf
-          cairo
-          pango
-          atk
-          harfbuzz
-        ];
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath guiLibs;
 
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" "rustfmt" "clippy" ];
-        };
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            makeWrapper
+          ];
 
-        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath guiLibs;
+          buildInputs = with pkgs; [ openssl ] ++ guiLibs;
 
-        nativeBuildInputs = with pkgs; [
-          pkg-config
-          rustToolchain
-          makeWrapper
-        ];
-
-        buildInputs = with pkgs; [ openssl ] ++ guiLibs;
-
-        mkDevShell = pkgs.mkShell {
-          inherit nativeBuildInputs buildInputs;
-          RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
-          shellHook = ''
-            export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"
-            export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}"
-          '';
-        };
-
-        # Desktop launcher entry + icon so tuneshon shows in app grids/launchers.
-        desktopItem = pkgs.makeDesktopItem {
-          name = "tuneshon";
-          exec = "tuneshon";
-          icon = "tuneshon";
-          desktopName = "update";
-          comment = "NixOS update tool (GUI + CLI)";
-          categories = [ "System" ];
-          type = "Application";
-        };
-
-        mkPackage = pkgs.rustPlatform.buildRustPackage {
+          # Desktop launcher entry + icon so tuneshon shows in app grids.
+          desktopItem = pkgs.makeDesktopItem {
+            name = "tuneshon";
+            exec = "tuneshon";
+            icon = "tuneshon";
+            desktopName = "update";
+            comment = "NixOS update tool (GUI + CLI)";
+            categories = [ "System" ];
+            type = "Application";
+          };
+        in
+        pkgs.rustPlatform.buildRustPackage {
           pname = "tuneshon";
           version = "0.1.0";
           src = pkgs.lib.cleanSourceWith {
@@ -94,21 +80,65 @@
           inherit nativeBuildInputs buildInputs;
           postInstall = ''
             wrapProgram $out/bin/tuneshon \
-              --prefix LD_LIBRARY_PATH : "${LD_LIBRARY_PATH}"
+              --prefix LD_LIBRARY_PATH : "${LD_LIBRARY_PATH}" \
+              --set TUNESHON_CONFIG_DIR "${configDir}"
 
-            # desktop entry + icon (launcher registration)
             install -Dm644 ${desktopItem}/share/applications/tuneshon.desktop \
               $out/share/applications/tuneshon.desktop
             install -Dm644 ${./tuneshon_logo.png} \
               $out/share/icons/hicolor/scalable/apps/tuneshon.png
           '';
-        };
-      in
-      {
-        devShells.default = mkDevShell;
-        packages.default = mkPackage;
-        packages.tuneshon = mkPackage;
-      });
+        }
+      );
+
+      perSystem = flake-utils.lib.eachDefaultSystem (system:
+        let
+          overlays = [ (import rust-overlay) ];
+          pkgs = import nixpkgs { inherit system overlays; };
+
+          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+            extensions = [ "rust-src" "rustfmt" "clippy" ];
+          };
+
+          guiLibs = with pkgs; [
+            libGL
+            libxkbcommon
+            wayland
+            xorg.libxcb
+            xorg.libX11
+            xorg.libXcursor
+            xorg.libXi
+            xorg.libXrandr
+            fontconfig
+            freetype
+            expat
+            zlib
+            openssl
+            gtk3
+            glib
+            glib-networking
+            gdk-pixbuf
+            cairo
+            pango
+            atk
+            harfbuzz
+          ];
+
+          mkDevShell = pkgs.mkShell {
+            nativeBuildInputs = with pkgs; [ pkg-config rustToolchain ];
+            buildInputs = with pkgs; [ openssl ] ++ guiLibs;
+            RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+            shellHook = ''
+              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath guiLibs}"
+              export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}"
+            '';
+          };
+        in
+        {
+          devShells.default = mkDevShell;
+          packages.default = mkPackage { inherit pkgs; configDir = "/etc/nixos"; };
+          packages.tuneshon = mkPackage { inherit pkgs; configDir = "/etc/nixos"; };
+        });
     in
     perSystem // {
     # hjem user module (see https://github.com/feel-co/hjem). Lets flake
@@ -140,11 +170,18 @@
         };
         config = lib.mkIf hjem.enable {
           packages = [
-            self.packages.${pkgs.stdenv.hostPlatform.system}.tuneshon
+            # Bake the configured dir into the installed wrapper so a
+            # desktop-launched "update" always points at the right repo.
+            (self.lib.mkPackage {
+              inherit pkgs;
+              configDir = hjem.configDir;
+            })
           ];
           environment.sessionVariables.TUNESHON_CONFIG_DIR = hjem.configDir;
         };
       };
     hjemModules.default = self.hjemModules.tuneshon;
+    # Reusable package builder so consumers can bake their own config dir.
+    lib.mkPackage = mkPackage;
     };
 }

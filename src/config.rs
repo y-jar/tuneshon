@@ -41,18 +41,26 @@ impl AppConfig {
 
     pub fn load() -> Result<Self> {
         let path = Self::config_path();
-        if path.exists() {
+        let mut cfg = if path.exists() {
             let raw = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
-            let cfg: AppConfig = serde_json::from_str(&raw)
-                .with_context(|| format!("parsing {}", path.display()))?;
-            Ok(cfg)
+            serde_json::from_str::<AppConfig>(&raw)
+                .with_context(|| format!("parsing {}", path.display()))?
         } else {
             let cfg = AppConfig::default();
             // Best-effort persist a fresh default, non-fatal.
             let _ = cfg.save();
-            Ok(cfg)
+            cfg
+        };
+        // TUNESHON_CONFIG_DIR (baked into the binary wrapper by the flake) takes
+        // precedence over any on-disk value, so a packaged install always points
+        // at the right Nix config repo regardless of stale/local config files.
+        if let Ok(dir) = std::env::var("TUNESHON_CONFIG_DIR") {
+            if !dir.is_empty() {
+                cfg.config_dir = PathBuf::from(dir);
+            }
         }
+        Ok(cfg)
     }
 
     pub fn save(&self) -> Result<()> {
