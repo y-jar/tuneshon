@@ -1,3 +1,9 @@
+//! Spawn shell commands and stream their output to a consumer.
+//!
+//! The command is run via `sh -c` in the config dir. stdout and stderr are read
+//! concurrently on tokio tasks and forwarded to a [`Sink`], which both notifies
+//! the GUI over a channel and appends lines to the log file.
+
 use crossbeam_channel::Sender;
 use std::io::Write;
 use std::path::Path;

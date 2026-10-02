@@ -1,8 +1,16 @@
+//! tuneshon: a lightweight NixOS update tool.
+//!
+//! Entry point for both the GUI (eframe/egui) and headless CLI. Parses the
+//! command line, loads [`config::AppConfig`], and dispatches to the appropriate
+//! runner. The GUI builds shell commands via `gui::actions` and streams output
+//! through `runner``; the CLI runs the same commands directly.
+
 mod config;
 mod flakelock;
 mod generations;
 mod gui;
 mod runner;
+mod text;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -54,8 +62,8 @@ enum Command {
         inputs: Vec<String>,
     },
     /// `nix flake update` then build + switch.
-    #[command(name = "flake-update-update")]
-    FlakeUpdateSwitchBoot {
+    #[command(name = "flake-update-switch")]
+    FlakeUpdateSwitch {
         inputs: Vec<String>,
     },
 }
@@ -81,42 +89,42 @@ fn real_main() -> anyhow::Result<i32> {
 
     let code = match args.command.unwrap() {
         Command::FullUpdate => {
-            let cmd = gui::actions::build_command(gui::actions::Action::FullUpdate, &cfg, None);
+            let cmd = gui::actions::build_headless_command(gui::actions::Action::FullUpdate, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
         Command::Update { dir } => {
             if let Some(d) = dir {
                 cfg.config_dir = std::path::PathBuf::from(d);
             }
-            let cmd = gui::actions::build_command(gui::actions::Action::Update, &cfg, None);
+            let cmd = gui::actions::build_headless_command(gui::actions::Action::Update, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
         Command::Test { dir } => {
             if let Some(d) = dir {
                 cfg.config_dir = std::path::PathBuf::from(d);
             }
-            let cmd = gui::actions::build_command(gui::actions::Action::Test, &cfg, None);
+            let cmd = gui::actions::build_headless_command(gui::actions::Action::Test, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
         Command::BootNext { dir } => {
             if let Some(d) = dir {
                 cfg.config_dir = std::path::PathBuf::from(d);
             }
-            let cmd = gui::actions::build_command(gui::actions::Action::BootNext, &cfg, None);
+            let cmd = gui::actions::build_headless_command(gui::actions::Action::BootNext, &cfg, None);
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
         Command::FlakeUpdate { inputs } => {
             let inputs = resolve_inputs(&inputs, &cfg);
-            let cmd = gui::actions::build_command(
+            let cmd = gui::actions::build_headless_command(
                 gui::actions::Action::SpecifyUpdate,
                 &cfg,
                 Some(&inputs),
             );
             runner::run_cli(&cmd, &cfg.config_dir, &cfg.log_file)?
         }
-        Command::FlakeUpdateSwitchBoot { inputs } => {
+        Command::FlakeUpdateSwitch { inputs } => {
             let inputs = resolve_inputs(&inputs, &cfg);
-            let cmd = gui::actions::build_command(
+            let cmd = gui::actions::build_headless_command(
                 gui::actions::Action::SpecifyUpdateFull,
                 &cfg,
                 Some(&inputs),

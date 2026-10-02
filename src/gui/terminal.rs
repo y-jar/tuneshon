@@ -1,9 +1,11 @@
+//! Scrollable terminal buffer with per-line color levels.
+
 /// Color level assigned to each terminal line for readability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
     /// Normal stdout output.
     Normal,
-    /// Warnings (`warning:`, `[err]`).
+    /// Warnings (`warning:`, dirty-tree notices).
     Warn,
     /// Errors / failures (`error:`, `fatal:`).
     Error,
@@ -57,30 +59,17 @@ pub fn classify(line: &str) -> Level {
     }
 }
 
-/// Strip ANSI escape sequences from a captured line.
-pub fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut in_esc = false;
-    for c in s.chars() {
-        if in_esc {
-            if c == 'm' {
-                in_esc = false;
-            }
-            continue;
-        }
-        if c == '\x1b' {
-            in_esc = true;
-            continue;
-        }
-        out.push(c);
-    }
-    out
+/// A single captured line with its classified color level.
+#[derive(Debug, Clone)]
+pub struct Line {
+    pub level: Level,
+    pub text: String,
 }
 
 /// An append-only, scrollable in-memory log buffer for the terminal area,
 /// carrying a per-line color level.
 pub struct Terminal {
-    pub lines: Vec<(Level, String)>,
+    pub lines: Vec<Line>,
     pub stick_to_bottom: bool,
 }
 
@@ -95,9 +84,12 @@ impl Default for Terminal {
 
 impl Terminal {
     pub fn push_line(&mut self, line: String) {
-        let line = strip_ansi(&line.strip_suffix('\n').unwrap_or(&line).to_string());
-        let level = classify(&line);
-        self.lines.push((level, line));
+        let stripped = crate::text::strip_ansi(&line.strip_suffix('\n').unwrap_or(&line).to_string());
+        let level = classify(&stripped);
+        self.lines.push(Line {
+            level,
+            text: stripped,
+        });
     }
 
     pub fn push_str(&mut self, text: &str) {
@@ -142,13 +134,13 @@ impl Terminal {
                     .auto_shrink([false, false])
                     .stick_to_bottom(self.stick_to_bottom)
                     .show(ui, |ui| {
-                        for (level, text) in &self.lines {
+                        for line in &self.lines {
                             ui.add(
                                 egui::Label::new(
-                                    egui::RichText::new(text)
+                                    egui::RichText::new(&line.text)
                                         .monospace()
                                         .size(16.0)
-                                        .color(level.color(ui)),
+                                        .color(line.level.color(ui)),
                                 )
                                 .wrap_mode(egui::TextWrapMode::Wrap),
                             );
@@ -191,6 +183,6 @@ mod tests {
 
     #[test]
     fn strips_ansi() {
-        assert_eq!(strip_ansi("\u{1b}[33mpeek\u{1b}[0m"), "peek");
+        assert_eq!(crate::text::strip_ansi("\u{1b}[33mpeek\u{1b}[0m"), "peek");
     }
 }

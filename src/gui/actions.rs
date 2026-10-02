@@ -1,3 +1,9 @@
+//! Build the shell command strings for each action.
+//!
+//! Two phases per action: a non-elevated preview (git/update + `nh os build`)
+//! and an elevated apply (`nh os switch|boot|test`) wrapped in `pkexec`. Also
+//! provides the quick input-update commands and the app-update command.
+
 use crate::config::AppConfig;
 
 /// The system action buttons present in the left control grid.
@@ -53,7 +59,7 @@ impl Action {
                  change the boot default, so it's safe to try."
             }
             Action::BootNext => {
-                "Stage changes, build, then boot — applies the new generation on \
+                "Stage changes, build, then boot. Applies the new generation on \
                  your next reboot."
             }
             Action::SpecifyUpdate => {
@@ -85,7 +91,7 @@ fn flake_arg(cfg: &AppConfig) -> String {
 }
 
 /// `nh os build` used as a non-elevated preview: compiles the config and
-/// confirms it's valid — all without a password.
+/// confirms it's valid, all without a password.
 fn preview_build(cfg: &AppConfig) -> String {
     format!("nh os build -e none {NH_PREVIEW_FLAGS} {}", flake_arg(cfg))
 }
@@ -167,7 +173,7 @@ pub fn build_update_app(cfg: &AppConfig) -> String {
 
 /// Full headless command: preview (build) then apply. Used by the CLI, which
 /// cannot show the interactive confirmation gate.
-pub fn build_command(action: Action, cfg: &AppConfig, inputs: Option<&str>) -> String {
+pub fn build_headless_command(action: Action, cfg: &AppConfig, inputs: Option<&str>) -> String {
     let preview = build_preview(action, cfg, inputs);
     match build_apply(action, cfg, false) {
         Some(apply) => format!("{preview} && {apply}"),

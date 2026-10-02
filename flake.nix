@@ -12,7 +12,7 @@
 
   outputs = { self, nixpkgs, flake-utils, rust-overlay }:
     let
-      # Build the tunehon package, baking a default Nix config dir into the
+      # Build the tuneshon package, baking a default Nix config dir into the
       # binary wrapper. Consumers pick the dir via `lib.mkPackage { inherit
       # pkgs configDir; }` so a desktop-launched "update" always points at the
       # right repo even though launchers don't source ~/.profile.
@@ -142,9 +142,9 @@
     in
     perSystem // {
     # hjem user module (see https://github.com/feel-co/hjem). Lets flake
-    # consumers pre-set tuneshon's config dir without in-app setup. This is
-    # a hjem user-scope module: `pkgs` resolves at the consumer's system, and
-    # `self.packages.${pkgs.stdenv.hostPlatform.system}` picks the built bin.
+    # consumers pre-set tuneshon's config dir without in-app setup. This is a
+    # hjem user-scope module; `pkgs` resolves at the consumer's system, and
+    # `self.lib.mkPackage` builds the binary baked with the configured dir.
     hjemModules.tuneshon = { config, lib, pkgs, ... }:
       let
         hjem = config.tuneshon;

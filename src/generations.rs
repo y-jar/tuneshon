@@ -1,3 +1,8 @@
+//! Parse NixOS system generations from `nh os info`.
+//!
+//! Used by the generation panel to list builds. The current generation is
+//! detected from the `/nix/var/nix/profiles/system -> system-N-link` symlink.
+
 use std::path::Path;
 
 /// One NixOS system generation row, from `nh os info`.
@@ -7,29 +12,9 @@ pub struct Generation {
     pub date: String,
     pub nixos_version: String,
     pub kernel: String,
-    pub size: String,
+    pub closure_size: String,
     /// True when this is the current (profile-target) generation.
     pub current: bool,
-}
-
-/// Strip ANSI escape sequences from a captured line.
-fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut in_esc = false;
-    for c in s.chars() {
-        if in_esc {
-            if c == 'm' {
-                in_esc = false;
-            }
-            continue;
-        }
-        if c == '\x1b' {
-            in_esc = true;
-            continue;
-        }
-        out.push(c);
-    }
-    out
 }
 
 /// Current generation id from the profile symlink,
@@ -38,11 +23,7 @@ fn current_id_from_profile(profile: &Path) -> Option<u64> {
     let raw = std::fs::read_link(profile)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| profile.to_string_lossy().into_owned());
-    let name = raw
-        .rsplit('/')
-        .next()
-        .unwrap_or(&raw)
-        .to_string();
+    let name = raw.rsplit('/').next().unwrap_or(&raw).to_string();
     name.trim_start_matches("system-")
         .trim_end_matches("-link")
         .parse::<u64>()
@@ -55,7 +36,7 @@ pub fn parse(output: &str, profile: &Path) -> Vec<Generation> {
     let current = current_id_from_profile(profile);
     let mut rows = Vec::new();
     for raw in output.lines() {
-        let line = strip_ansi(raw);
+        let line = crate::text::strip_ansi(raw);
         let trimmed = line.trim();
         if trimmed.is_empty() || !trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
             || line.starts_with("Generation No")
@@ -74,8 +55,8 @@ pub fn parse(output: &str, profile: &Path) -> Vec<Generation> {
         };
         let nixos_version = it.next().unwrap_or("").to_string();
         let kernel = it.next().unwrap_or("").to_string();
-        // Closure Size is "32.0" followed by a unit token ("GB"/"MiB"/...).
-        let size = match (it.next(), it.next()) {
+        // Closure size is "32.0" followed by a unit token ("GB"/"MiB"/...).
+        let closure_size = match (it.next(), it.next()) {
             (Some(n), Some(unit)) => format!("{n} {unit}"),
             (Some(n), None) => n.to_string(),
             _ => String::new(),
@@ -85,7 +66,7 @@ pub fn parse(output: &str, profile: &Path) -> Vec<Generation> {
             date,
             nixos_version,
             kernel,
-            size,
+            closure_size,
             current: Some(id) == current,
         });
     }
@@ -127,7 +108,7 @@ mod tests {
         assert_eq!(gens.len(), 2);
         assert_eq!(gens[0].id, 474);
         assert_eq!(gens[0].kernel, "7.2.3-cachyos");
-        assert_eq!(gens[0].size, "32.0 GB");
+        assert_eq!(gens[0].closure_size, "32.0 GB");
     }
 
     #[test]

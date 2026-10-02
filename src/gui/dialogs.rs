@@ -1,3 +1,5 @@
+//! Modal dialogs: settings, flake-input picker, apply confirmation, and help.
+
 use crate::config::AppConfig;
 use crate::flakelock;
 use std::path::PathBuf;
@@ -75,7 +77,7 @@ pub fn settings_modal(
                 if ui.text_edit_singleline(&mut config_dir_buf).changed() {
                     edit.config_dir = PathBuf::from(config_dir_buf.trim());
                 }
-                if ui.button("Browse…").on_hover_text("Pick the Nix config directory (repo root).").clicked() {
+                if ui.button("Browse...").on_hover_text("Pick the Nix config directory (repo root).").clicked() {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         config_dir_buf = p.to_string_lossy().into_owned();
                         edit.config_dir = p;
@@ -87,7 +89,7 @@ pub fn settings_modal(
                 if ui.text_edit_singleline(&mut log_file_buf).changed() {
                     edit.log_file = PathBuf::from(log_file_buf.trim());
                 }
-                if ui.button("Browse…").on_hover_text("Pick where to write the log file.").clicked() {
+                if ui.button("Browse...").on_hover_text("Pick where to write the log file.").clicked() {
                     if let Some(p) = rfd::FileDialog::new()
                         .set_file_name("tuneshon.log")
                         .save_file()
@@ -274,7 +276,7 @@ pub fn confirm_modal(ctx: &egui::Context, prompt: &mut ConfirmPrompt) {
                 }
                 if ui
                     .button("Cancel")
-                    .on_hover_text("Abort — do not apply; returns to idle.")
+                    .on_hover_text("Abort. Do not apply; returns to idle.")
                     .clicked()
                 {
                     prompt.cancelled = true;

@@ -1,3 +1,10 @@
+//! egui/eframe graphical interface.
+//!
+//! Three panels: a left action grid (system actions + quick input updates), a
+//! center terminal that streams colored command output, and a right generations
+//! panel. Actions run a non-elevated `nh os build` preview first, then, after a
+//! confirmation gate, an elevated apply wrapped in a single `pkexec`.
+
 pub mod actions;
 pub mod dialogs;
 pub mod terminal;
@@ -29,7 +36,8 @@ pub struct App {
     pub flake_opened_this_frame: bool,
     pub flake_prompt: FlakePrompt,
     pub confirm: ConfirmPrompt,
-    pub pending: Option<(Action, Vec<String>)>,
+    /// The action waiting on the flake-input picker to finish.
+    pub pending: Option<Action>,
     /// The elevated apply command stashed after a successful preview, awaiting
     /// the confirmation gate. `None` means no apply is queued.
     pub pending_apply: Option<(Action, String)>,
@@ -130,7 +138,7 @@ impl App {
         if ok {
             if let Some((action, apply_cmd)) = self.pending_apply.as_ref() {
                 self.confirm.summary = format!(
-                    "Build OK for \"{}\" — apply it now?\n  {}",
+                    "Build OK for \"{}\". Apply it now?\n  {}",
                     action.label(),
                     apply_cmd
                 );
@@ -171,7 +179,7 @@ impl App {
             self.flake_prompt.load(&self.cfg);
             self.flake_prompt.open = true;
             self.flake_opened_this_frame = true;
-            self.pending = Some((action, Vec::new()));
+            self.pending = Some(action);
         } else {
             self.start_preview(action, None);
         }
@@ -368,12 +376,12 @@ impl App {
                 ui.separator();
                 if self.gens_loading {
                     ui.spinner();
-                    ui.weak("loading…");
+                    ui.weak("loading...");
                 } else if self.generations.is_empty() {
                     if self.gens_loaded {
                         ui.weak("no generations found");
                     } else {
-                        ui.weak("loading…");
+                        ui.weak("loading...");
                     }
                 } else {
                     egui::ScrollArea::vertical()
@@ -382,7 +390,7 @@ impl App {
                             for g in &self.generations {
                                 let rich = egui::RichText::new(format!(
                                     "{{{}  {}\n  {}  {}  {}",
-                                    g.id, g.date, g.nixos_version, g.kernel, g.size
+                                    g.id, g.date, g.nixos_version, g.kernel, g.closure_size
                                 ))
                                 .monospace()
                                 .size(13.0);
@@ -431,7 +439,7 @@ impl App {
                 self.flake_prompt.submit_requested = false;
                 self.flake_prompt.open = false;
                 let joined = self.flake_prompt.selected_names().join(" ");
-                if let Some((action, _)) = self.pending.take() {
+                if let Some(action) = self.pending.take() {
                     self.start_preview(action, Some(&joined));
                 }
             }
@@ -483,8 +491,8 @@ fn install_system_fonts(ctx: &egui::Context) {
         }
     };
 
-    // Enumerate system fonts via font-kit. font-kit's source loading is
-    // synchronous and blocking here — acceptable at startup.
+    // Enumerate system fonts via `fc-match`. Source loading is synchronous and
+    // blocking here, acceptable at startup.
     let load = std::process::Command::new("fc-match")
         .args(["-f", "%{file}", "monospace"])
         .output();

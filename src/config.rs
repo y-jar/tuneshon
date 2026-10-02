@@ -1,12 +1,18 @@
+//! Persistent user configuration (`~/.config/tuneshon/config.json`).
+//!
+//! Stored as JSON: the Nix config dir (repo root), the log file path, and the
+//! boot loader name. `TUNESHON_CONFIG_DIR`, baked into the installed binary's
+//! wrapper by the flake, overrides the persisted config dir on load.
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Persistent user configuration for tuneshon.
 ///
 /// `config_dir` is the Nix configuration directory used both as the
 /// repository root (`repodir`) for `git add` and as the working directory
-/// where `git`, `nix`, and `nixos-rebuild` are executed.
+/// where `git`, `nix`, and `nh` are executed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub config_dir: PathBuf,
@@ -21,8 +27,8 @@ impl Default for AppConfig {
         let config_dir = std::env::var("TUNESHON_CONFIG_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/etc/nixos"));
-        let config_dir_home = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".config"));
-        let log_file = config_dir_home.join("tuneshon").join("tuneshon.log");
+        let xdg_config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".config"));
+        let log_file = xdg_config_dir.join("tuneshon").join("tuneshon.log");
         Self {
             config_dir,
             log_file,
@@ -84,6 +90,5 @@ pub fn ensure_log_dir(cfg: &AppConfig) -> Result<()> {
     if let Some(dir) = cfg.log_file.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let _ = Path::new(&cfg.config_dir);
     Ok(())
 }
