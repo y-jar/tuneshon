@@ -15,6 +15,10 @@ let
     expat
     zlib
     openssl
+    gtk3
+    glib-networking
+    gdk-pixbuf
+    harfbuzz
   ];
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath guiLibs;
 in

@@ -61,19 +61,38 @@ pub fn settings_modal(
     let mut reset = false;
     let mut save_cfg: Option<AppConfig> = None;
 
-    egui::Window::new("Settings")
+    let resp = egui::Window::new("Settings")
         .open(open)
         .resizable(true)
         .show(ctx, |ui| {
             ui.set_min_width(360.0);
             ui.label("Nix config dir");
-            if ui.text_edit_singleline(&mut config_dir_buf).changed() {
-                edit.config_dir = PathBuf::from(config_dir_buf.trim());
-            }
+            ui.horizontal(|ui| {
+                if ui.text_edit_singleline(&mut config_dir_buf).changed() {
+                    edit.config_dir = PathBuf::from(config_dir_buf.trim());
+                }
+                if ui.button("Browse…").clicked() {
+                    if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                        config_dir_buf = p.to_string_lossy().into_owned();
+                        edit.config_dir = p;
+                    }
+                }
+            });
             ui.label("Log file");
-            if ui.text_edit_singleline(&mut log_file_buf).changed() {
-                edit.log_file = PathBuf::from(log_file_buf.trim());
-            }
+            ui.horizontal(|ui| {
+                if ui.text_edit_singleline(&mut log_file_buf).changed() {
+                    edit.log_file = PathBuf::from(log_file_buf.trim());
+                }
+                if ui.button("Browse…").clicked() {
+                    if let Some(p) = rfd::FileDialog::new()
+                        .set_file_name("tuneshon.log")
+                        .save_file()
+                    {
+                        log_file_buf = p.to_string_lossy().into_owned();
+                        edit.log_file = p;
+                    }
+                }
+            });
             ui.label("Boot loader");
             egui::ComboBox::from_id_salt("boot_loader")
                 .selected_text(options[sel])
@@ -111,8 +130,27 @@ pub fn settings_modal(
         let _ = cfg.save();
         *open = false;
     }
-    let _ = &mut edit;
-    let _ = &mut boot_changed;
+    if let Some(inner) = resp {
+        if dismiss_requested(ctx, &inner.response.rect) {
+            *open = false;
+        }
+    }
+}
+
+/// True when the modal should close: Escape was pressed or a click landed
+/// outside the given window rect.
+fn dismiss_requested(ctx: &egui::Context, win_rect: &egui::Rect) -> bool {
+    let mut escape = false;
+    let mut outside = false;
+    ctx.input(|i| {
+        escape = i.key_pressed(egui::Key::Escape);
+        outside = i.pointer.any_click()
+            && i
+                .pointer
+                .interact_pos()
+                .is_some_and(|p| !win_rect.contains(p));
+    });
+    escape || outside
 }
 
 /// Modal for picking which flake inputs to update.
@@ -122,7 +160,7 @@ pub fn flake_prompt(ctx: &egui::Context, prompt: &mut FlakePrompt) {
     let mut inputs: Vec<FlakeInput> = prompt.inputs.clone();
     let mut submit = false;
 
-    egui::Window::new("Select flake inputs to update")
+    let resp = egui::Window::new("Select flake inputs to update")
         .open(&mut open)
         .resizable(true)
         .show(ctx, |ui| {
@@ -160,6 +198,12 @@ pub fn flake_prompt(ctx: &egui::Context, prompt: &mut FlakePrompt) {
             }
         });
 
+    if let Some(inner) = resp {
+        if dismiss_requested(ctx, &inner.response.rect) {
+            open = false;
+        }
+    }
+
     prompt.open = open;
     prompt.filter = filter;
     prompt.inputs = inputs;
@@ -170,7 +214,7 @@ pub fn flake_prompt(ctx: &egui::Context, prompt: &mut FlakePrompt) {
 
 pub fn help_modal(ctx: &egui::Context, open: &mut bool) {
     let mut close = false;
-    egui::Window::new("Help").open(open).collapsible(false).show(ctx, |ui| {
+    let resp = egui::Window::new("Help").open(open).collapsible(false).show(ctx, |ui| {
         ui.spacing_mut().item_spacing = egui::Vec2::new(8.0, 6.0);
         let body = [
             "tuneshon - lightweight NixOS update tool",
@@ -203,5 +247,10 @@ pub fn help_modal(ctx: &egui::Context, open: &mut bool) {
     });
     if close {
         *open = false;
+    }
+    if let Some(inner) = resp {
+        if dismiss_requested(ctx, &inner.response.rect) {
+            *open = false;
+        }
     }
 }

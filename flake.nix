@@ -31,6 +31,14 @@
           expat
           zlib
           openssl
+          gtk3
+          glib
+          glib-networking
+          gdk-pixbuf
+          cairo
+          pango
+          atk
+          harfbuzz
         ];
 
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
@@ -43,9 +51,9 @@
           pkg-config
           rustToolchain
           makeWrapper
-        ] ++ guiLibs;
+        ];
 
-        buildInputs = with pkgs; [ openssl ];
+        buildInputs = with pkgs; [ openssl ] ++ guiLibs;
 
         mkDevShell = pkgs.mkShell {
           inherit nativeBuildInputs buildInputs;
