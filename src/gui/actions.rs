@@ -46,15 +46,20 @@ impl Action {
     }
 }
 
-/// Common `nh` logging flags so output streams cleanly line-by-line instead of
-/// being clobbered by nix-output-monitor's ANSI redraw frames.
-const NH_LOG_FLAGS: &str = "--no-nom --show-activation-logs";
+/// Common `nh` logging flags for the non-elevated preview. `nh os build` does
+/// not accept `--show-activation-logs`, so preview gets full build logs (`-L`)
+/// instead.
+const NH_PREVIEW_FLAGS: &str = "--no-nom --print-build-logs";
+
+/// Elevated `nh os switch|boot` accepts `--show-activation-logs`.
+const NH_APPLY_FLAGS: &str = "--no-nom --show-activation-logs";
 
 /// `nh os build` used as a non-elevated preview: compiles the config, prints
-/// the result, and confirms the flake is valid — all without a password.
+/// the result, and confirms the flake is valid — all without a password. nh
+/// takes the flake as a positional `[PATH]` installable, not `--flake`.
 fn preview_build(cfg: &AppConfig) -> String {
     format!(
-        "nh os build -e none {NH_LOG_FLAGS} --flake {}",
+        "nh os build -e none {NH_PREVIEW_FLAGS} {}",
         shell_escape(&cfg.config_dir.to_string_lossy())
     )
 }
@@ -62,7 +67,7 @@ fn preview_build(cfg: &AppConfig) -> String {
 /// `nh os switch|boot` elevated through pkexec (pops the polkit GUI dialog).
 fn apply_os(flag: &str, cfg: &AppConfig) -> String {
     format!(
-        "nh os {flag} -e pkexec {NH_LOG_FLAGS} --flake {}",
+        "nh os {flag} -e pkexec {NH_APPLY_FLAGS} {}",
         shell_escape(&cfg.config_dir.to_string_lossy())
     )
 }
@@ -135,14 +140,18 @@ mod tests {
     #[test]
     fn preview_is_nonelevated_build() {
         let cmd = build_preview(Action::AddSwitch, &cfg(), None);
-        assert!(cmd.starts_with("git add . && nh os build -e none --no-nom"));
-        assert!(cmd.contains("--flake /home/jar/nix-config"));
+        assert!(cmd.starts_with("git add . && nh os build -e none --no-nom --print-build-logs"));
+        // nh takes the flake as a positional PATH, not --flake
+        assert!(cmd.ends_with("/home/jar/nix-config"));
+        // nh os build does not accept --show-activation-logs
+        assert!(!cmd.contains("--show-activation-logs"));
     }
 
     #[test]
     fn apply_uses_pkexec() {
         let cmd = build_apply(Action::AddSwitch, &cfg()).unwrap();
-        assert!(cmd.starts_with("nh os switch -e pkexec --no-nom"));
+        assert!(cmd.starts_with("nh os switch -e pkexec --no-nom --show-activation-logs"));
+        assert!(cmd.ends_with("/home/jar/nix-config"));
     }
 
     #[test]
