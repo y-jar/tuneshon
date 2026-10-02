@@ -5,7 +5,7 @@ pub mod terminal;
 use crate::config::AppConfig;
 use crate::runner::{self, Event, Sink};
 use crossbeam_channel::{Receiver, Sender};
-use dialogs::FlakePrompt;
+use dialogs::{ConfirmPrompt, FlakePrompt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use terminal::Terminal;
@@ -22,7 +22,13 @@ pub struct App {
     pub settings_open: bool,
     pub help_open: bool,
     pub flake_prompt: FlakePrompt,
+    pub confirm: ConfirmPrompt,
     pub pending: Option<(Action, Vec<String>)>,
+    /// The elevated apply command stashed after a successful preview, awaiting
+    /// the confirmation gate. `None` means no apply is queued.
+    pub pending_apply: Option<(Action, String)>,
+    /// True while a command (preview or apply) is running; blocks re-clicking.
+    pub running: bool,
     pub logo_angle: f32,
     pub spinning: bool,
 }
@@ -52,7 +58,10 @@ impl App {
             settings_open: false,
             help_open: false,
             flake_prompt: FlakePrompt::default(),
+            confirm: ConfirmPrompt::default(),
             pending: None,
+            pending_apply: None,
+            running: false,
             logo_angle: 0.0,
             spinning: false,
         };
@@ -74,38 +83,82 @@ impl App {
             match ev {
                 Event::Out(l) => self.terminal.push_line(l),
                 Event::Err(l) => self.terminal.push_line(format!("[err] {l}")),
-                Event::Done(code) => {
-                    let line = match code {
-                        Some(0) => "--- done (0) ---".to_string(),
-                        Some(c) => format!("--- exited with code {c} ---"),
-                        None => "--- exited (signal) ---".to_string(),
-                    };
-                    self.terminal.push_line(line);
-                }
+                Event::Done(code) => self.on_command_done(code),
             }
         }
     }
 
+    /// A command finished. If it was the preview and it succeeded, offer the
+    /// elevated apply via the confirmation gate; otherwise just report and reset.
+    fn on_command_done(&mut self, code: Option<i32>) {
+        let line = match code {
+            Some(0) => "--- done (0) ---".to_string(),
+            Some(c) => format!("--- exited with code {c} ---"),
+            None => "--- exited (signal) ---".to_string(),
+        };
+        self.terminal.push_line(line);
+        self.running = false;
+        self.spinning = false;
+
+        let ok = code.unwrap_or(1) == 0;
+        if ok {
+            if let Some((action, apply_cmd)) = self.pending_apply.take() {
+                self.confirm.summary = format!(
+                    "Build OK for \"{}\" — apply it now?\n  {}",
+                    action.label(),
+                    apply_cmd
+                );
+                self.confirm.open = true;
+            }
+        } else {
+            // Preview (or apply) failed: nothing to confirm, back to idle.
+            self.pending_apply = None;
+        }
+    }
+
     /// Spawn a command on the tokio runtime, capturing output for display.
-    fn spawn(&self, cmd: &str) {
+    fn spawn(&mut self, cmd: &str) {
         let cwd = self.cfg.config_dir.clone();
         let cmd = cmd.to_string();
         let sink = self.sink();
         let rt = self.runtime.handle().clone();
+        self.running = true;
         rt.spawn(async move {
             let _ = runner::run(&cmd, &cwd, sink).await;
         });
     }
 
     fn handle_action(&mut self, action: Action) {
-        let has_flake = action.needs_flake_inputs();
-        if has_flake {
+        if self.running {
+            return; // one command at a time
+        }
+        if action.needs_flake_inputs() {
             self.flake_prompt.load(&self.cfg);
             self.flake_prompt.open = true;
             self.pending = Some((action, Vec::new()));
         } else {
-            let cmd = actions::build_command(action, &self.cfg, None);
-            self.spawn(&cmd);
+            self.start_preview(action, None);
+        }
+    }
+
+    /// Run the non-elevated preview for `action`. If it needs an apply step,
+    /// stash the elevated command for the confirmation gate on success.
+    fn start_preview(&mut self, action: Action, inputs: Option<&str>) {
+        let preview = actions::build_preview(action, &self.cfg, inputs);
+        self.pending_apply = actions::build_apply(action, &self.cfg)
+            .map(|apply| (action, apply));
+        self.spawn(&preview);
+    }
+
+    /// Run the elevated apply command after the user confirmed.
+    fn start_apply(&mut self) {
+        if let Some((action, apply)) = self.pending_apply.take() {
+            self.confirm.open = false;
+            self.terminal.push_line(format!(
+                "[ok] applying \"{}\"...",
+                action.label()
+            ));
+            self.spawn(&apply);
         }
     }
 
@@ -159,9 +212,13 @@ impl App {
                 ui.add_space(4.0);
                 ui.heading("Actions");
                 ui.separator();
+                let can_click = !self.running && !self.confirm.open;
                 for action in Action::ALL {
                     if ui
-                        .add_sized([ui.available_width(), 44.0], egui::Button::new(action.label()))
+                        .add_enabled(
+                            can_click,
+                            egui::Button::new(action.label()).min_size(egui::vec2(ui.available_width(), 44.0)),
+                        )
                         .clicked()
                     {
                         self.handle_action(action);
@@ -197,9 +254,21 @@ impl App {
                 self.flake_prompt.open = false;
                 let joined = self.flake_prompt.selected_names().join(" ");
                 if let Some((action, _)) = self.pending.take() {
-                    let cmd = actions::build_command(action, &self.cfg, Some(&joined));
-                    self.spawn(&cmd);
+                    self.start_preview(action, Some(&joined));
                 }
+            }
+        }
+        if self.confirm.open {
+            dialogs::confirm_modal(ctx, &mut self.confirm);
+            if self.confirm.apply_requested {
+                self.confirm.apply_requested = false;
+                self.start_apply();
+            } else if self.confirm.cancelled {
+                self.confirm.cancelled = false;
+                self.confirm.open = false;
+                self.terminal.push_line("[cancelled] nothing applied".to_string());
+                self.pending_apply = None;
+                self.spinning = false;
             }
         }
     }

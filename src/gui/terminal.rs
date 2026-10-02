@@ -50,8 +50,10 @@ impl Terminal {
                     .stick_to_bottom(self.stick_to_bottom)
                     .show(ui, |ui| {
                         ui.add(
-                            egui::Label::new(egui::RichText::new(&text).monospace().small())
-                                .wrap_mode(egui::TextWrapMode::Wrap),
+                            egui::Label::new(
+                                egui::RichText::new(&text).monospace().size(16.0),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Wrap),
                         );
                     });
             });

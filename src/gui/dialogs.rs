@@ -212,6 +212,60 @@ pub fn flake_prompt(ctx: &egui::Context, prompt: &mut FlakePrompt) {
     }
 }
 
+/// Confirmation gate between the non-elevated preview and the elevated apply.
+pub struct ConfirmPrompt {
+    pub open: bool,
+    pub summary: String,
+    pub apply_requested: bool,
+    /// True when the user dismissed/cancelled without applying.
+    pub cancelled: bool,
+}
+
+impl Default for ConfirmPrompt {
+    fn default() -> Self {
+        Self {
+            open: false,
+            summary: String::new(),
+            apply_requested: false,
+            cancelled: false,
+        }
+    }
+}
+
+/// Modal asking whether to apply the just-built configuration.
+pub fn confirm_modal(ctx: &egui::Context, prompt: &mut ConfirmPrompt) {
+    let mut open = prompt.open;
+    let summary = prompt.summary.clone();
+
+    let resp = egui::Window::new("Apply configuration?")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.set_min_width(360.0);
+            ui.label(egui::RichText::new(&summary).monospace().size(13.0));
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui.button("Apply").clicked() {
+                    prompt.apply_requested = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    prompt.cancelled = true;
+                }
+            });
+        });
+
+    if let Some(inner) = resp {
+        if dismiss_requested(ctx, &inner.response.rect) {
+            open = false;
+            prompt.cancelled = true;
+        }
+    }
+    if !open || prompt.apply_requested {
+        prompt.open = false;
+    }
+}
+
 pub fn help_modal(ctx: &egui::Context, open: &mut bool) {
     let mut close = false;
     let resp = egui::Window::new("Help").open(open).collapsible(false).show(ctx, |ui| {
@@ -221,15 +275,20 @@ pub fn help_modal(ctx: &egui::Context, open: &mut bool) {
             "",
             "GUI actions (left grid):",
             "  pull + switch + boot",
-            "      git pull, then nixos-rebuild switch and boot.",
+            "      git pull, then build + switch + boot (via nh).",
             "  git add {repodir} + switch + boot",
-            "      stage repo changes, then switch and boot.",
+            "      stage repo changes, then switch + boot.",
             "  git add {repodir} + switch",
             "      stage repo changes, then switch.",
             "  git add {repodir} + boot",
             "      stage repo changes, then boot.",
             "  flake lock update [ + switch + boot ]",
             "      pick flake inputs to update in the dialog.",
+            "",
+            "Each action first runs a non-elevated `nh os build` so you can",
+            "watch the terminal and confirm the config builds. Only after it",
+            "succeeds are you prompted (Apply/Cancel) to run the elevated",
+            "switch/boot through pkexec.",
             "",
             "The right pane streams command output (stdout/stderr).",
             "Output is also appended to the configured log file.",
