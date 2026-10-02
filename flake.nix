@@ -11,8 +11,9 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, rust-overlay }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
+    let
+      perSystem = flake-utils.lib.eachDefaultSystem (system:
+        let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs { inherit system overlays; };
 
@@ -91,4 +92,42 @@
         packages.default = mkPackage;
         packages.tuneshon = mkPackage;
       });
+    in
+    perSystem // {
+    # hjem user module (see https://github.com/feel-co/hjem). Lets flake
+    # consumers pre-set tuneshon's config dir without in-app setup. This is
+    # a hjem user-scope module: `pkgs` resolves at the consumer's system, and
+    # `self.packages.${pkgs.stdenv.hostPlatform.system}` picks the built bin.
+    hjemModules.tuneshon = { config, lib, pkgs, ... }:
+      let
+        hjem = config.tuneshon;
+      in
+      {
+        options.tuneshon = {
+          enable = lib.mkEnableOption "tuneshon (NixOS update tool)";
+          configDir = lib.mkOption {
+            type = lib.types.str;
+            default = "/etc/nixos";
+            description = "NixOS config directory tuneshon operates on.";
+          };
+          bootLoader = lib.mkOption {
+            type = lib.types.str;
+            default = "systemd-boot";
+            description = "Boot loader name (e.g. systemd-boot, grub).";
+          };
+          logFile = lib.mkOption {
+            type = lib.types.str;
+            default = "$HOME/.config/tuneshon/tuneshon.log";
+            description = "Path to the tuneshon log file.";
+          };
+        };
+        config = lib.mkIf hjem.enable {
+          packages = [
+            self.packages.${pkgs.stdenv.hostPlatform.system}.tuneshon
+          ];
+          environment.sessionVariables.TUNESHON_CONFIG_DIR = hjem.configDir;
+        };
+      };
+    hjemModules.default = self.hjemModules.tuneshon;
+    };
 }

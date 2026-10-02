@@ -16,10 +16,15 @@ pub struct AppConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
-        let data_dir = dirs::data_dir().unwrap_or_else(|| PathBuf::from(".local/share"));
-        let log_file = data_dir.join("tuneshon").join("tuneshon.log");
+        // TUNESHON_CONFIG_DIR lets a NixOS flake module pre-set the Nix config
+        // dir before the app is first run, mirroring the CLI `--dir` override.
+        let config_dir = std::env::var("TUNESHON_CONFIG_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/etc/nixos"));
+        let config_dir_home = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".config"));
+        let log_file = config_dir_home.join("tuneshon").join("tuneshon.log");
         Self {
-            config_dir: PathBuf::from("/etc/nixos"),
+            config_dir,
             log_file,
             boot_loader: "systemd-boot".to_string(),
         }
