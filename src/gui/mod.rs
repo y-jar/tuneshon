@@ -100,7 +100,7 @@ impl App {
         while let Ok(ev) = self.rx.try_recv() {
             match ev {
                 Event::Out(l) => self.terminal.push_line(l),
-                Event::Err(l) => self.terminal.push_line(format!("[err] {l}")),
+                Event::Err(l) => self.terminal.push_line(l),
                 Event::Done(code) => self.on_command_done(code),
                 Event::Generations(gens) => {
                     self.generations = gens;

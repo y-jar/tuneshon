@@ -141,3 +141,40 @@ impl Terminal {
             });
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_errors_red() {
+        assert_eq!(classify("error: build failed"), Level::Error);
+        assert_eq!(classify("fatal: not a git repository"), Level::Error);
+        assert_eq!(classify("failed to fetch input"), Level::Error);
+    }
+
+    #[test]
+    fn classifies_warnings_amber() {
+        assert_eq!(classify("warning: Git tree '/x' is dirty"), Level::Warn);
+        assert_eq!(classify("profile may need sync"), Level::Warn);
+    }
+
+    #[test]
+    fn classifies_success_and_muted() {
+        assert_eq!(classify("[ok] applying..."), Level::Ok);
+        assert_eq!(classify("--- done (0) ---"), Level::Ok); // success marker -> green
+        assert_eq!(classify("--- exited with code 1 ---"), Level::Muted);
+        assert_eq!(classify("[cancelled] nothing applied"), Level::Muted);
+    }
+
+    #[test]
+    fn informational_stderr_is_normal() {
+        assert_eq!(classify("> Building NixOS configuration"), Level::Normal);
+        assert_eq!(classify("Activating configuration"), Level::Normal);
+        assert_eq!(classify("not applying UID change of user 'gdm-greeter-2'"), Level::Normal);
+    }
+
+    #[test]
+    fn strips_ansi() {
+        assert_eq!(strip_ansi("\u{1b}[33mpeek\u{1b}[0m"), "peek");
+    }
+}
